@@ -49,7 +49,7 @@ def rc(
     req = Request(f"{BASE_URL}{path}", data=data, headers=headers, method=method)
     try:
         with urlopen(req) as resp:
-            return json.loads(resp.read())  # type: ignore[no-any-return]
+            return json.loads(resp.read())
     except HTTPError as e:
         result: dict = json.loads(e.read())
         if allow_conflict and e.code == 409:
@@ -94,6 +94,61 @@ class Config:
     bundle_id: str
     platform: str
     key: str
+    with_credits: bool = False
+
+
+def setup_virtual_currency(
+    project_id: str,
+    key: str,
+    monthly_product_id: str,
+    annual_product_id: str,
+    currency_code: str = "CRED",
+    currency_name: str = "Credits",
+    monthly_grant: int = 100,
+    annual_grant: int = 1200,
+) -> dict:
+    """Create a virtual currency and attach product grants to it.
+
+    Monthly subscribers receive `monthly_grant` credits; annual subscribers
+    receive `annual_grant` credits. Uses the subscription + credits hybrid
+    monetization pattern.
+    """
+    step(f"Creating virtual currency: {currency_code} ({currency_name})")
+    vc = rc(
+        "POST",
+        f"/projects/{project_id}/virtual_currencies",
+        key,
+        {
+            "code": currency_code,
+            "name": currency_name,
+            "description": "AI inference credits — spend per API call",
+        },
+        allow_conflict=True,
+    )
+    if vc.get("type") == "resource_already_exists":
+        vc = rc(
+            "GET", f"/projects/{project_id}/virtual_currencies/{currency_code}", key
+        )
+        done(f"Virtual currency {currency_code} already exists, reusing")
+    else:
+        done(f"Virtual currency created: {currency_code}", vc.get("code", ""))
+
+    step(f"Attaching product grants to {currency_code}")
+    updated = rc(
+        "POST",
+        f"/projects/{project_id}/virtual_currencies/{currency_code}",
+        key,
+        {
+            "product_grants": [
+                {"product_ids": [monthly_product_id], "amount": monthly_grant},
+                {"product_ids": [annual_product_id], "amount": annual_grant},
+            ]
+        },
+    )
+    done(
+        f"Grants attached: monthly={monthly_grant} credits, annual={annual_grant} credits"
+    )
+    return updated
 
 
 def bootstrap(cfg: Config) -> None:
@@ -228,12 +283,23 @@ def bootstrap(cfg: Config) -> None:
     )
     done("Annual product → $rc_annual package")
 
+    # 8. Virtual currency (optional)
+    if cfg.with_credits:
+        setup_virtual_currency(
+            project_id=cfg.project_id,
+            key=cfg.key,
+            monthly_product_id=monthly["id"],
+            annual_product_id=annual["id"],
+        )
+
     # Summary
     print(f"\n{'─' * 50}")
     print(f"{OK} Done! Your RevenueCat config is ready.\n")
     print(f"  App ID:         {app_id}")
     print(f"  Entitlement:    premium ({ent_id})")
     print(f"  Offering:       default ({offering_id})")
+    if cfg.with_credits:
+        print("  Credits:        CRED (monthly=100, annual=1200)")
     print(f"\n  SDK key: run `uv run python setup.py --get-key --app-id {app_id}`")
     print("\n  Next: run subscription-sanity to verify everything is wired correctly.")
     print("  https://github.com/zarpa-cat/subscription-sanity\n")
@@ -251,6 +317,12 @@ def main() -> None:
         choices=["app_store", "play_store", "test_store"],
         default="app_store",
     )
+    parser.add_argument(
+        "--with-credits",
+        action="store_true",
+        default=False,
+        help="Also create a CRED virtual currency with product grants (hybrid monetization)",
+    )
     args = parser.parse_args()
 
     key = os.environ.get("RC_API_KEY", "")
@@ -265,6 +337,7 @@ def main() -> None:
             bundle_id=args.bundle_id,
             platform=args.platform,
             key=key,
+            with_credits=args.with_credits,
         )
     )
 

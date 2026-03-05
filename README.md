@@ -79,6 +79,7 @@ uv run python setup.py \
   --app-name "My App" \
   --bundle-id com.example.myapp \
   --platform app_store   # or: play_store, test_store
+  --with-credits         # optional: also create CRED virtual currency with product grants
 ```
 
 **Platforms:**
@@ -120,6 +121,7 @@ RC creates a test_store app automatically when you create a project — check if
 
 ## Roadmap
 
+- [x] `--with-credits` flag — create CRED virtual currency with monthly (100) and annual (1200) product grants
 - [ ] `--dry-run` mode — show what would be created, don't create it
 - [ ] Fetch and display SDK keys after setup
 - [ ] Support custom entitlement names and product slugs
